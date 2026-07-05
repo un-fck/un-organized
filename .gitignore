@@ -258,3 +258,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# python + data (stage C organigram work)
+__pycache__/
+*.pyc
+.venv/
+/data
