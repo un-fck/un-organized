@@ -5,6 +5,7 @@ description = "UN Website Boilerplate"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "openai>=1.60.0",
     "ipykernel>=7.1.0",
     "joblib>=1.5.3",
     "natsort>=8.4.0",
