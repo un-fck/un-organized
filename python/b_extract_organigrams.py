@@ -1,4 +1,4 @@
-"""Stage C: extract organigram (organizational structure) data from PPB documents.
+"""Stage B: extract organigram (organizational structure) data from PPB documents.
 
 Each Programme Budget section document (``A/NN/6 (Sect. X)``) usually ends with an
 annex titled *"Organizational structure and post distribution for <year>"*.  That

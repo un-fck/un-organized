@@ -56,7 +56,7 @@ Total: 512                        combined total (independent checksum)
 Footnote superscripts (`a`, `b`, …) mark redeployments/reassignments and attach
 to grades or the box.
 
-## Stage C — deterministic native parser (`python/c_extract_organigrams.py`)
+## Stage B — deterministic native parser (`python/b_extract_organigrams.py`)
 
 Locates the annex, classifies each panel, and for native panels extracts fully
 structured `Box` records (name, component, `posts` by funding source, subtotals,
@@ -87,23 +87,23 @@ tokenized individually.
 
 ## Pipeline design (decisions locked with the user)
 
-1. **Stage C (done)** — deterministic native extraction → structured boxes +
+1. **Stage B (done)** — deterministic native extraction → structured boxes +
    connector geometry; raster images extracted. This is the exact, auditable
    source of the *post counts* (the thing vision models fumble).
-2. **Stage D — hierarchy (geometry + LLM check).** For native panels,
+2. **Stage C — hierarchy (geometry + LLM check).** For native panels,
    deterministically infer parent/child edges from connector-line coordinates
    vs. box bounding boxes, then have an LLM (Claude subagent) verify/repair
    ambiguous edges — notably side-attached units (e.g. an "Information Technology
    Unit" drawn to the right of "Office of the Chief": child or peer?). Consumes
-   the `boxes` + `connectors` emitted by Stage C.
-3. **Stage D′ — raster + flagged-box extraction (vision).** Claude vision reads
+   the `boxes` + `connectors` emitted by Stage B.
+3. **Stage C′ — raster + flagged-box extraction (vision).** Claude vision reads
    raster panels and re-parses flagged native boxes from `raw_lines` + the
    rendered image, emitting the same schema. Cross-check post totals against the
    section's resource tables to catch OCR errors.
-4. **Stage E — cross-year reconciliation (Claude subagents).** Assign stable
+4. **Stage D — cross-year reconciliation (Claude subagents).** Assign stable
    unit IDs across years; track renames / splits / merges as a change log so
    charts are directly comparable over time; interleave web research for
    reorganizations. This is the actual deliverable goal.
 
 Rendering PDFs for the vision stage: `pdftoppm -png -r 150 -f P -l P <pdf>`
-(poppler); embedded raster bitmaps are already saved by Stage C at full fidelity.
+(poppler); embedded raster bitmaps are already saved by Stage B at full fidelity.
