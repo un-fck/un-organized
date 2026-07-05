@@ -186,20 +186,55 @@ def paragraph_cells(p_el: etree._Element) -> list[list[str]]:
     return [c.strip() for c in cells]
 
 
-def reassemble_textbox(txbx_el: etree._Element) -> list[list[str]]:
-    """Reassemble a textbox into a list of rows, each a list of tab-cells."""
+def _table_rows(tbl_el: etree._Element) -> list[list[str]]:
+    """Extract a nested table as rows of cell texts (columns preserved).
+
+    The RB/XB/OA funding columns inside a box are frequently a real Word table
+    rather than tab-separated text.  Each table column is a funding source and
+    each row a post entry, so the cell grid maps directly onto the funding
+    columns that :func:`parse_box` already understands.
+    """
     rows: list[list[str]] = []
-    for p in txbx_el.iterfind(f".//{_q('w:p')}"):
-        cells = paragraph_cells(p)
-        # expand embedded newlines into separate rows, keeping column position
-        max_lines = max((c.count("\n") + 1 for c in cells), default=1)
-        if max_lines == 1:
-            rows.append(cells)
-        else:
-            split = [c.split("\n") for c in cells]
-            for i in range(max_lines):
-                rows.append([(s[i] if i < len(s) else "").strip() for s in split])
+    for tr in tbl_el.iterfind(_q("w:tr")):
+        cells: list[str] = []
+        for tc in tr.iterfind(_q("w:tc")):
+            lines = [
+                "".join(t.text or "" for t in p.iterfind(f".//{_q('w:t')}")).strip()
+                for p in tc.iterfind(_q("w:p"))
+            ]
+            cells.append(" ".join(x for x in lines if x).strip())
+        rows.append(cells)
     return rows
+
+
+def _content_to_rows(content: etree._Element) -> list[list[str]]:
+    """Walk a block container's direct children (paragraphs + tables) into rows.
+
+    Plain paragraphs become tab-split rows; a nested table contributes one row
+    per table row with columns preserved.  Shared by textboxes and table cells.
+    """
+    rows: list[list[str]] = []
+    for child in content:
+        tag = etree.QName(child).localname
+        if tag == "tbl":
+            rows.extend(_table_rows(child))
+        elif tag == "p":
+            cells = paragraph_cells(child)
+            # expand embedded newlines into separate rows, keeping column position
+            max_lines = max((c.count("\n") + 1 for c in cells), default=1)
+            if max_lines == 1:
+                rows.append(cells)
+            else:
+                split = [c.split("\n") for c in cells]
+                for i in range(max_lines):
+                    rows.append([(s[i] if i < len(s) else "").strip() for s in split])
+    return rows
+
+
+def reassemble_textbox(txbx_el: etree._Element) -> list[list[str]]:
+    """Reassemble a textbox into rows of tab-cells (see :func:`_content_to_rows`)."""
+    content = txbx_el.find(f".//{_q('w:txbxContent')}")
+    return _content_to_rows(content) if content is not None else []
 
 
 # ---------------------------------------------------------------------------
@@ -346,8 +381,8 @@ def _quality_flags(name, posts, total, raw_lines, col_funding) -> list[str]:
         flags.append("empty_name")
     if _ABBREV_RE.match(name) or _ABBREV_RE.search(joined[:40]):
         flags.append("not_a_unit")  # abbreviation / note textbox, not an org unit
-    if len(col_funding) > 2:
-        flags.append("multi_funding_column")
+    if len(col_funding) > 3:
+        flags.append("multi_funding_column")  # 4+ columns: unusual, worth a look
     if joined.count("Total:") > 1:
         flags.append("multiple_totals")
     n_parsed = sum(len(v) for v in posts.values())
@@ -435,7 +470,10 @@ def parse_native_canvas(drawing_el: etree._Element) -> tuple[list[Box], list[Con
 # Annex location + section-level extraction
 # ---------------------------------------------------------------------------
 _ANNEX_TITLE_RE = re.compile(r"rganizational structure and post", re.IGNORECASE)
-_PANEL_HEADING_RE = re.compile(r"^([A-Z])\.\s+(.*)$")
+# Panel headings look like "A.<tab>Board of Auditors".  Anchor on the tab / wide
+# gap after the letter so long office names are not rejected by a length cap, and
+# ordinary prose starting "A. word" is not misread as a heading.
+_PANEL_HEADING_RE = re.compile(r"^([A-Z])\.(?:\t+| {2,})(.+)$")
 
 
 def _iter_blocks(doc: docx.Document):
@@ -464,6 +502,78 @@ def _drawing_in(el) -> etree._Element | None:
     return dr
 
 
+def _drawings_in(el) -> list[etree._Element]:
+    """All ``<w:drawing>`` elements in a paragraph.
+
+    A single paragraph often holds several drawings -- each box and connector may
+    be its own anchored drawing rather than one grouped canvas -- so parsing only
+    the first (as :func:`_drawing_in` does) silently drops the rest of the chart.
+    """
+    return list(el._p.iterfind(f".//{_q('w:drawing')}"))
+
+
+REPORTING_LINE_LABELS = {
+    "secretary-general", "the secretary-general", "chef de cabinet",
+    "deputy secretary-general",
+}
+
+
+_FINANCIAL_HEADER_RE = re.compile(
+    r"regular budget|other assessed|extrabudgetary|appropriation|"
+    r"before recosting|\bvariance\b|resource requirements|non-post|"
+    r"\bestimate\b|financial resources|post changes",
+    re.IGNORECASE,
+)
+
+
+def parse_table_organigram(table: Table) -> list[Box]:
+    """Extract unit boxes from an organigram laid out as a whole Word table.
+
+    Some charts (e.g. the Board of Auditors) are a plain N x M table rather than
+    vector shapes: boxes live in cells, spacing/connectors in the blank cells.
+    Each populated cell is parsed as a box, with (row, col) as pseudo-geometry.
+
+    The annex region also contains ordinary financial/resource tables, so a table
+    only qualifies as an organigram when its cells carry post-grade tokens and no
+    financial-table header text -- otherwise a resource table would be mistaken
+    for a chart and flood the output with hundreds of non-unit "boxes".
+    """
+    all_text = "\n".join(
+        cell.text for row in table.rows for cell in row.cells
+    )
+    if _FINANCIAL_HEADER_RE.search(all_text):
+        return []
+    if not _GRADE_TOKEN_RE.search(all_text):
+        return []  # no posts anywhere -> not a post-distribution organigram
+    boxes: list[Box] = []
+    idx = 0
+    # A box spans a block of merged cells; python-docx repeats its text across the
+    # spanned grid positions, so dedupe by content signature (keeping the first,
+    # i.e. top-left, occurrence) rather than by cell identity.
+    seen: set[tuple] = set()
+    for r, row in enumerate(table.rows):
+        for c, cell in enumerate(row.cells):
+            rows = _content_to_rows(cell._tc)
+            if not any(any(x for x in rr) for rr in rows):
+                continue
+            geom = {"x": c, "y": r, "w": None, "h": None}
+            box = parse_box(idx, rows, geom)
+            if not (box.name or any(box.posts.values()) or box.total is not None):
+                continue
+            sig = (
+                box.name,
+                box.total,
+                tuple((f, p.count, p.grade) for f, v in sorted(box.posts.items()) for p in v),
+            )
+            if sig in seen:
+                continue
+            seen.add(sig)
+            boxes.append(box)
+            idx += 1
+    # a table with a single populated cell is usually a caption/notes table
+    return boxes if len(boxes) >= 2 else []
+
+
 def _blips_in(el) -> list[str]:
     """Return the r:embed relationship ids of raster images in a paragraph."""
     p = el._p
@@ -473,6 +583,20 @@ def _blips_in(el) -> list[str]:
         if rid:
             ids.append(rid)
     return ids
+
+
+def _tag_reporting_lines(boxes: list[Box]) -> None:
+    """Flag apex/reporting-line label boxes (Secretary-General, Chef de Cabinet).
+
+    These carry no posts -- they show the reporting line above the units, not an
+    org unit themselves -- so they are marked rather than counted as units.
+    """
+    for b in boxes:
+        nm = b.name.strip().lower()
+        n_posts = sum(len(v) for v in b.posts.values())
+        if nm in REPORTING_LINE_LABELS and n_posts == 0 and b.total is None:
+            if "reporting_line" not in b.flags:
+                b.flags.append("reporting_line")
 
 
 def extract_section(path: Path, year: int, symbol: str, media_dir: Path) -> SectionOrganigram:
@@ -493,35 +617,59 @@ def extract_section(path: Path, year: int, symbol: str, media_dir: Path) -> Sect
     current_label: str | None = None
     current_heading: str | None = None
     panel_open = False
+    headings: list[tuple[str, str]] = []  # (label, heading) seen in the annex
 
     def new_panel(enc: str) -> Panel:
         return Panel(label=current_label, heading=current_heading, encoding=enc)
 
     for el in blocks[start + 1 :]:
         if isinstance(el, Table):
+            # whole-chart organigram laid out as a table (no vector shapes)
+            boxes = parse_table_organigram(el)
+            if boxes:
+                empty = sum(1 for b in boxes if not b.name.strip())
+                if empty > 0.4 * len(boxes):
+                    # per-post cell layout: units fragment into a name cell plus
+                    # many single-post cells we cannot regroup deterministically;
+                    # route the whole chart to the vision stage instead of emitting
+                    # dozens of nameless fragments.
+                    result.panels.append(new_panel("unresolved"))
+                else:
+                    panel = new_panel("table")
+                    panel.boxes = boxes
+                    _tag_reporting_lines(panel.boxes)
+                    result.panels.append(panel)
             continue
         text = (el.text or "").strip()
         if re.match(r"^Annex\s+[IVXLC]+\b", text) and "structure" not in text.lower():
             break  # reached the next annex
         mh = _PANEL_HEADING_RE.match(text)
-        if mh and len(text) < 120:
+        if mh:
             current_label = mh.group(1) + "."
             current_heading = mh.group(2).strip()
+            headings.append((current_label, current_heading))
             continue
 
-        dr = _drawing_in(el)
-        if dr is None:
-            continue
-
+        drawings = _drawings_in(el)
         blip_ids = _blips_in(el)
-        # native if there are wps textboxes with content, else raster if blips
-        has_txbx = dr.find(f".//{_q('wps:txbx')}") is not None
-        if has_txbx:
-            boxes, connectors = parse_native_canvas(dr)
+        if drawings:
+            # a paragraph can carry several drawings (boxes/connectors as separate
+            # anchored drawings); parse and merge them all into one panel
+            boxes: list[Box] = []
+            connectors: list[Connector] = []
+            for dr in drawings:
+                if dr.find(f".//{_q('wps:txbx')}") is None:
+                    continue
+                b, cx = parse_native_canvas(dr)
+                for bx in b:
+                    bx.idx = len(boxes)
+                    boxes.append(bx)
+                connectors.extend(cx)
             if boxes:
                 panel = new_panel("native")
                 panel.boxes = boxes
                 panel.connectors = connectors
+                _tag_reporting_lines(panel.boxes)
                 result.panels.append(panel)
                 panel_open = True
                 continue
@@ -544,11 +692,21 @@ def extract_section(path: Path, year: int, symbol: str, media_dir: Path) -> Sect
                 result.panels.append(panel)
                 panel_open = True
 
-    encs = {p.encoding for p in result.panels}
+    # any labelled panel whose chart was not extractable from the docx (empty
+    # graphic-only drawing) gets a placeholder so it is visible, not silently
+    # dropped; the PDF page must be read by the vision stage instead.
+    emitted = {p.label for p in result.panels if p.label}
+    for label, heading in headings:
+        if label not in emitted:
+            result.panels.append(Panel(label=label, heading=heading, encoding="unresolved"))
+            emitted.add(label)
+
+    encs = {p.encoding for p in result.panels if p.encoding != "unresolved"}
     result.encoding = (
         "native" if "native" in encs and "raster" not in encs
         else "raster" if encs == {"raster"}
         else "mixed" if encs
+        else "unresolved" if any(p.encoding == "unresolved" for p in result.panels)
         else "none"
     )
     return result

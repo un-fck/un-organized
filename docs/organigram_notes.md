@@ -33,9 +33,22 @@ one of two ways, and the mix shifts sharply over time:
   `mc:Choice` (modern) side to avoid double-counting.
 * **raster** — the whole chart is a single embedded bitmap (`a:blip`). No text;
   must be read by a vision model. Image quality is good (~1000px, crisp).
+* **table** — the whole chart is an ordinary Word table (e.g. Board of Auditors):
+  boxes live in merged cells, connectors in the blank cells. Parsed by cell grid.
+  Gated so financial/resource tables in the annex are not mistaken for charts.
+* **unresolved** — a labelled panel whose chart the docx does not actually
+  contain in extractable form (an empty graphic-only drawing, or a table whose
+  per-post cell layout cannot be regrouped). Emitted as a placeholder, not
+  silently dropped, and routed to the vision stage.
 
-Both paths are mandatory: 2020–2022 are mostly raster, 2023–2027 mostly native,
-so neither alone covers the historical comparison.
+Both native and raster paths are mandatory: 2020–2022 are mostly raster,
+2023–2027 mostly native, so neither alone covers the historical comparison.
+
+A box can carry its RB/XB/OA columns either as tab-separated text **or as a
+nested Word table** inside the textbox — the latter must be read by cell grid,
+not flattened, or the funding columns scramble (all posts collapse onto the
+last-seen source). A single panel may also spread its boxes across several
+separate `<w:drawing>` elements rather than one canvas; all must be parsed.
 
 ## Box anatomy (both encodings)
 
@@ -64,11 +77,13 @@ total, footnotes, group-relative geometry) plus connector-line geometry. Raster
 panels have their bitmaps extracted to `…/organigrams/media/` for the vision
 stage. Output: `data/processed/ppb{year}/organigrams/{section}.json`.
 
-### Quality (native boxes)
+### Quality (native + table boxes)
 
-3,787 unit boxes across 693 native panels. **91% parse cleanly** (no flags);
-**95% of clean boxes satisfy `sum(posts) == Total`** — an independent checksum.
-The remaining ~9% are flagged (not dropped) for the LLM/geometry stage:
+~4,800 unit boxes across 778 native + 15 table panels. **90% parse cleanly**
+(no flags); **99% of clean boxes satisfy `sum(posts) == Total`** — an independent
+checksum. A further 253 raster and 32 unresolved panels are routed to the vision
+stage. Every labelled panel is accounted for (0 silently dropped). The remaining
+~10% of boxes are flagged (not dropped) for the LLM/geometry stage:
 
 | flag | meaning |
 |------|---------|
