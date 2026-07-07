@@ -2,7 +2,7 @@
 
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { PART_SHORT, byPart, fmt, partColor, partColumns, sectionForest, squarify } from "@/lib/organigram";
+import { PART_SHORT, byPart, fmt, partColor, partColumns, buildSectionTree, squarify } from "@/lib/organigram";
 import { NestedTreemap } from "./NestedTreemap";
 import type { Rect, Unit } from "@/types/organigram";
 import { useWidth } from "./hooks";
@@ -46,7 +46,7 @@ export function DrillTreemap({ units, onSelectUnit }: { units: Unit[]; onSelectU
         {section && (<><ChevronRight size={14} /><span className="text-foreground">Section {section.section}</span></>)}
       </div>
       {section ? (
-        <NestedTreemap forest={sectionForest(section.units)} color={color} height={H} onSelectUnit={onSelectUnit} />
+        <NestedTreemap forest={buildSectionTree(section.units)} color={color} height={H} onSelectUnit={onSelectUnit} />
       ) : (
       <div ref={ref} className="relative w-full rounded-md bg-muted/30" style={{ height: H }}>
         {/* level 0: parts as ordered horizontal columns, width proportional to posts */}

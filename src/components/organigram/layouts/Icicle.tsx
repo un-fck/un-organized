@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PART_SHORT, byPart, cmpSection, fmt, partColor, sectionForest, subtreeTotal } from "@/lib/organigram";
+import { PART_SHORT, buildSectionTree, byPart, cmpSection, fmt, partColor } from "@/lib/organigram";
 import { cn } from "@/lib/utils";
-import type { SectionAgg, TreeNode, Unit } from "@/types/organigram";
+import type { HNode, SectionAgg, Unit } from "@/types/organigram";
 import { useWidth } from "./hooks";
 
 const H = 620;
@@ -35,28 +35,22 @@ function Col({ head, cells, grow, empty }: { head: string; cells: Cell[]; grow: 
   );
 }
 
-function depthOf(n: TreeNode): number {
-  if (!n.children.length) return 1;
-  let kd = Math.max(...n.children.map(depthOf));
-  if (n.unit.posts_total > 0) kd = Math.max(kd, 1);
-  return 1 + kd;
+function depthOf(n: HNode): number {
+  return n.children.length ? 1 + Math.max(...n.children.map(depthOf)) : 1;
 }
-type FCell = { x: number; y: number; w: number; h: number; node: TreeNode };
-function placeFlame(nodes: TreeNode[], x: number, y0: number, y1: number, colW: number, out: FCell[]) {
-  const sum = nodes.reduce((s, n) => s + subtreeTotal(n), 0) || 1;
+type FCell = { x: number; y: number; w: number; h: number; node: HNode };
+function placeFlame(nodes: HNode[], x: number, y0: number, y1: number, colW: number, out: FCell[]) {
+  const sum = nodes.reduce((s, n) => s + n.value, 0) || 1;
   let y = y0;
   for (const n of nodes) {
-    const h = (subtreeTotal(n) / sum) * (y1 - y0);
+    const h = (n.value / sum) * (y1 - y0);
     out.push({ x: x * colW, y, w: colW, h, node: n });
-    const kids: TreeNode[] = n.children.length
-      ? [...n.children, ...(n.unit.posts_total > 0 ? [{ unit: n.unit, children: [], extraParents: [] } as TreeNode] : [])]
-      : [];
-    if (kids.length) placeFlame(kids, x + 1, y, y + h, colW, out);
+    if (n.children.length) placeFlame(n.children, x + 1, y, y + h, colW, out);
     y += h;
   }
 }
 
-function FlameColumn({ head, forest, color, onSelectUnit }: { head: string; forest: TreeNode[]; color: string; onSelectUnit: (u: Unit) => void }) {
+function FlameColumn({ head, forest, color, onSelectUnit }: { head: string; forest: HNode[]; color: string; onSelectUnit: (u: Unit) => void }) {
   const [ref, w] = useWidth<HTMLDivElement>();
   const depth = forest.length ? Math.max(...forest.map(depthOf)) : 1;
   const out: FCell[] = [];
@@ -65,21 +59,19 @@ function FlameColumn({ head, forest, color, onSelectUnit }: { head: string; fore
     <div className="flex flex-col" style={{ flexGrow: 6, flexBasis: 0 }}>
       <div className="mb-1 text-xs font-semibold text-muted-foreground">{head}</div>
       <div ref={ref} className="relative overflow-hidden rounded bg-muted/20" style={{ height: H }}>
-        {out.map((c, i) => {
-          const hasKids = c.node.children.length > 0;
-          return (
-            <button key={i} onClick={() => onSelectUnit(c.node.unit)} title={`${c.node.unit.name} — ${fmt(c.node.unit.posts_total)} posts`}
-              className="absolute overflow-hidden border border-white/40 px-1 text-left transition-[filter] hover:brightness-110"
-              style={{ left: c.x, top: c.y, width: c.w, height: c.h, background: color, filter: `brightness(${1 - (c.x / (c.w || 1)) * 0})` }}>
-              {c.h > 11 && (
-                <span className="pointer-events-none block truncate text-[9px] leading-tight font-medium text-white">
-                  {c.node.unit.name}
-                  {c.h > 22 && <span className="block text-[8px] font-normal opacity-80">{fmt(hasKids ? subtreeTotal(c.node) : c.node.unit.posts_total)}</span>}
-                </span>
-              )}
-            </button>
-          );
-        })}
+        {out.map((c, i) => (
+          <button key={i} onClick={() => c.node.unit && onSelectUnit(c.node.unit)} disabled={!c.node.unit}
+            title={`${c.node.name} — ${fmt(c.node.value)} posts`}
+            className="absolute overflow-hidden border border-white/40 px-1 text-left transition-[filter] enabled:hover:brightness-110"
+            style={{ left: c.x, top: c.y, width: c.w, height: c.h, background: color }}>
+            {c.h > 11 && (
+              <span className="pointer-events-none block truncate text-[9px] leading-tight font-medium text-white">
+                {c.node.name}
+                {c.h > 22 && <span className="block text-[8px] font-normal opacity-80">{fmt(c.node.value)}</span>}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -112,16 +104,16 @@ export function Icicle({ units, onSelectUnit }: { units: Unit[]; onSelectUnit: (
   return (
     <div>
       <div className="mb-2 text-sm text-muted-foreground">
-        Click a part to focus its sections, then a section to see its units nested by reporting line.
+        Click a part to focus its sections, then a section to see its offices and units nested by reporting line.
         {(selPart || selSec) && (<button className="ml-2 text-un-blue hover:underline" onClick={() => { setSelPart(null); setSelSec(null); }}>reset</button>)}
       </div>
       <div className="flex gap-2">
         <Col head="Budget part" cells={partCells} grow={2} />
         <Col head={part ? `Sections · ${part.part}` : "Sections"} cells={secCells} grow={3} />
         {sec ? (
-          <FlameColumn head={`Units · Section ${sec.section} (nested)`} forest={sectionForest(sec.units)} color={partColor(part!.part)} onSelectUnit={onSelectUnit} />
+          <FlameColumn head={`Offices & units · Section ${sec.section}`} forest={buildSectionTree(sec.units)} color={partColor(part!.part)} onSelectUnit={onSelectUnit} />
         ) : (
-          <Col head="Units" cells={[]} grow={6} empty="Select a section to see its units, nested by reporting line" />
+          <Col head="Offices & units" cells={[]} grow={6} empty="Select a section to see its offices and units, nested by reporting line" />
         )}
       </div>
     </div>

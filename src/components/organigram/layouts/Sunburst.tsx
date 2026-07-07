@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PART_SHORT, byPart, fmt, partColor, sectionForest, subtreeTotal } from "@/lib/organigram";
-import type { TreeNode, Unit } from "@/types/organigram";
+import { PART_SHORT, buildSectionTree, byPart, fmt, partColor } from "@/lib/organigram";
+import type { HNode, Unit } from "@/types/organigram";
 
 const SIZE = 1440;
 const C = SIZE / 2;
@@ -36,41 +36,22 @@ export function Sunburst({ units, onSelectUnit }: { units: Unit[]; onSelectUnit:
   const root = useMemo<SNode>(() => {
     const parts = byPart(units);
     const grand = parts.reduce((s, p) => s + p.total, 0) || 1;
-    const fromTree = (t: TreeNode, color: string, keyBase: string): SNode => {
-      const own = t.unit.posts_total;
-      const kids = t.children.map((c, i) => fromTree(c, color, `${keyBase}/${i}`));
-      // internal node's own staff becomes a leaf so the ring fills exactly
-      if (kids.length > 0 && own > 0) {
-        kids.push({ key: `${keyBase}#own`, name: t.unit.name, value: own, color, unit: t.unit, children: [] });
-      }
-      return {
-        key: keyBase, name: t.unit.name, value: subtreeTotal(t), color, unit: t.unit, children: kids,
-      };
+    const toS = (h: HNode, color: string, parent: SNode): SNode => {
+      const n: SNode = { key: h.key, name: h.name, value: h.value, color, unit: h.unit, children: [], parent };
+      n.children = h.children.map((c) => toS(c, color, n));
+      return n;
     };
     const rootNode: SNode = { key: "root", name: "All", value: grand, color: "#888", children: [] };
     for (const p of parts) {
       const color = partColor(p.part);
-      const partNode: SNode = {
-        key: p.part, name: `${p.part.replace("Part ", "")}. ${PART_SHORT[p.part] ?? p.partName}`,
-        value: p.total, color, children: [], parent: rootNode,
-      };
-      for (const s of p.sections) {
-        const secNode: SNode = {
-          key: `${p.part}/${s.section}`, name: `Section ${s.section} · ${s.department}`,
-          value: s.total, color, children: [], parent: partNode,
-        };
-        for (const t of sectionForest(s.units)) {
-          const n = fromTree(t, color, `${secNode.key}/${t.unit.id}`);
-          n.parent = secNode;
-          secNode.children.push(n);
-        }
+      const partNode: SNode = { key: p.part, name: `${p.part.replace("Part ", "")}. ${PART_SHORT[p.part] ?? p.partName}`, value: p.total, color, children: [], parent: rootNode };
+      for (const sec of p.sections) {
+        const secNode: SNode = { key: `${p.part}/${sec.section}`, name: `Section ${sec.section} · ${sec.department}`, value: sec.total, color, children: [], parent: partNode };
+        secNode.children = buildSectionTree(sec.units).map((office) => toS(office, color, secNode));
         partNode.children.push(secNode);
       }
       rootNode.children.push(partNode);
     }
-    // set parent links inside unit subtrees
-    const link = (n: SNode) => n.children.forEach((c) => { c.parent = n; link(c); });
-    link(rootNode);
     return rootNode;
   }, [units]);
 
@@ -110,7 +91,7 @@ export function Sunburst({ units, onSelectUnit }: { units: Unit[]; onSelectUnit:
 
   return (
     <div className="flex flex-col items-center">
-      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full" style={{ maxWidth: SIZE }}>
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="block" style={{ width: "min(92vw, 84vh)", height: "min(92vw, 84vh)" }}>
         {segs.map((s, i) => {
           const r0 = RIN + s.ring * thickness;
           const r1 = r0 + thickness;

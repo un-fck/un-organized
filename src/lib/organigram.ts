@@ -1,4 +1,4 @@
-import type { PartAgg, Rect, SectionAgg, Tile, TreeNode, Unit } from "@/types/organigram";
+import type { HNode, PartAgg, Rect, SectionAgg, Tile, TreeNode, Unit } from "@/types/organigram";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
@@ -237,4 +237,56 @@ export function sectionForest(units: Unit[]): TreeNode[] {
 
 export function subtreeTotal(n: TreeNode): number {
   return n.unit.posts_total + n.children.reduce((s, c) => s + subtreeTotal(c), 0);
+}
+
+// --- section hierarchy: Section -> Office (panel) -> unit tree --------------
+// Every panel is one org chart; each redraws the reporting line up to the SG for
+// context. We group units by panel (office), and strip reporting-line labels that
+// carry no posts (a 0-post "Secretary-General"/"Chef de Cabinet"), promoting their
+// children. Real units named the same but in different panels stay separate.
+const APEX_LABELS = new Set([
+  "secretary-general", "the secretary-general", "deputy secretary-general", "chef de cabinet",
+]);
+function isReportingLabel(u: Unit): boolean {
+  const n = u.name.trim().toLowerCase();
+  return u.posts_total === 0 && ((u.flags ?? []).includes("reporting_line") || APEX_LABELS.has(n));
+}
+function toHNodes(forest: TreeNode[], keyBase: string): HNode[] {
+  const out: HNode[] = [];
+  for (const t of forest) {
+    if (isReportingLabel(t.unit)) {
+      out.push(...toHNodes(t.children, keyBase)); // drop the label, promote its children
+      continue;
+    }
+    const key = `${keyBase}/${t.unit.id}`;
+    const kids = toHNodes(t.children, key);
+    const own = t.unit.posts_total;
+    if (kids.length > 0 && own > 0) {
+      kids.push({ key: `${key}#own`, name: t.unit.name, value: own, unit: t.unit, children: [] });
+    }
+    const value = kids.length ? kids.reduce((s, c) => s + c.value, 0) : own;
+    out.push({ key, name: t.unit.name, value, unit: t.unit, children: kids });
+  }
+  return out;
+}
+export function buildSectionTree(units: Unit[]): HNode[] {
+  const byPanel = new Map<string, Unit[]>();
+  for (const u of units) {
+    const k = u.panel ?? "-";
+    const arr = byPanel.get(k) ?? [];
+    arr.push(u);
+    byPanel.set(k, arr);
+  }
+  const offices: HNode[] = [];
+  for (const [panel, us] of byPanel) {
+    const children = toHNodes(buildForest(us), `${us[0].section}/${panel}`);
+    if (!children.length) continue;
+    offices.push({
+      key: `${us[0].section}/${panel}`,
+      name: us[0].panel_heading || `Chart ${panel}`,
+      value: children.reduce((s, c) => s + c.value, 0),
+      children,
+    });
+  }
+  return offices.sort((a, b) => b.value - a.value);
 }

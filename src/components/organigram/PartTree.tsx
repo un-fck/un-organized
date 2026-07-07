@@ -2,7 +2,7 @@
 
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
-import { byPart, cmpSection, fmt, partColor } from "@/lib/organigram";
+import { buildSectionTree, byPart, cmpSection, fmt, partColor } from "@/lib/organigram";
 import type { SectionAgg, Unit } from "@/types/organigram";
 import { OrgTree } from "./OrgTree";
 
@@ -25,7 +25,7 @@ function SectionRow({ sec, onSelect }: { sec: SectionAgg; onSelect: (u: Unit) =>
       </button>
       {open && (
         <div className="p-2 pt-0">
-          <OrgTree units={sec.units} onSelect={onSelect} />
+          <OrgTree forest={buildSectionTree(sec.units)} onSelect={onSelect} />
         </div>
       )}
     </div>

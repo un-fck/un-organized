@@ -52,3 +52,13 @@ export interface TreeNode {
   children: TreeNode[];
   extraParents: string[];
 }
+
+// Unified hierarchy node for the plots: an office/panel grouping (no `unit`) or a
+// real unit (leaf or internal). `value` is the subtree total posts.
+export interface HNode {
+  key: string;
+  name: string;
+  value: number;
+  unit?: Unit;
+  children: HNode[];
+}

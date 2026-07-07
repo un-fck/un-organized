@@ -21,6 +21,18 @@ from pathlib import Path
 
 import c_extract_vision as V  # locate_panels / render_page
 
+SECTION_NAMES = json.loads((Path(__file__).parent / "section_names.json").read_text())
+
+
+def _section_name(section: str, fallback: str) -> str:
+    base = re.match(r"(\d+)", section)
+    add = re.search(r"Add\.(\d+)", section)
+    name = SECTION_NAMES.get(section) or (SECTION_NAMES.get(base.group(1)) if base else None)
+    if not name:
+        return fallback
+    return name + (f" (Add.{add.group(1)})" if add else "")
+
+
 PROC = Path("../data/processed")
 DL = Path("../data/downloads")
 WEB = Path("../public")
@@ -92,7 +104,8 @@ def export_year(year: int) -> None:
         if sec_m and sec_m.group(2):
             section += f"/Add.{sec_m.group(2)}"
         # section/department label = first panel heading if present
-        dept = next((p.get("heading") for p in d["panels"] if p.get("heading")), None) or f"Section {section}"
+        dept_fallback = next((p.get("heading") for p in d["panels"] if p.get("heading")), None) or f"Section {section}"
+        dept = _section_name(section, dept_fallback)
 
         page_map = None
         for idx, p in enumerate(d["panels"]):
