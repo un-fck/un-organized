@@ -1,4 +1,7 @@
 data/
+# ...but the exported webapp data must ship with the static site (CI has no python pipeline)
+!public/data/
+!public/data/**
 
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
