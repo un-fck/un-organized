@@ -1,6 +1,14 @@
-# UN Website Boilerplate
+# UN Secretariat Organigrams
 
-https://github.com/kleinlennart/un-website-boilerplate
+> ⚠️ **Work in progress — data are not reliable yet.** The organizational
+> structure and post counts on this site are extracted automatically from UN
+> Programme Budget documents and have **not been validated**. They contain known
+> errors and omissions and should not be cited or relied upon. This is an
+> exploratory prototype.
+
+---
+
+Built on the UN Website Boilerplate: https://github.com/kleinlennart/un-website-boilerplate
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 

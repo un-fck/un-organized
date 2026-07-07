@@ -57,6 +57,14 @@ export default function Home() {
         className="mb-6 h-9 w-auto select-none sm:h-10"
         draggable={false}
       />
+      <div
+        role="note"
+        className="mb-6 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200"
+      >
+        <span className="font-semibold">⚠️ Work in progress — the data are not reliable yet.</span>{" "}
+        Units and post counts are extracted automatically from UN Programme Budget documents and have
+        not been validated. They contain known errors and should not be cited or relied upon.
+      </div>
       <header className="mb-8">
         <h1 className="text-3xl font-bold text-foreground">UN Secretariat organigrams</h1>
         <p className="mt-1 text-foreground">
