@@ -1,17 +1,20 @@
 "use client";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 export function useWidth<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
   const [w, setW] = useState(0);
-  useLayoutEffect(() => {
-    const el = ref.current;
+  const roRef = useRef<ResizeObserver | null>(null);
+  // Callback ref: re-runs whenever the element mounts/unmounts, so the observer
+  // is re-attached (and re-measured) after the node is removed and later remounted
+  // — e.g. toggling in and out of a drilled view.
+  const ref = useCallback((el: T | null) => {
+    roRef.current?.disconnect();
     if (!el) return;
-    const m = () => setW(el.clientWidth);
-    m();
-    const ro = new ResizeObserver(m);
+    const measure = () => setW(el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
+    roRef.current = ro;
   }, []);
   return [ref, w] as const;
 }

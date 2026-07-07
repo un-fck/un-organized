@@ -4,7 +4,6 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { PartTree } from "@/components/organigram/PartTree";
 import { UnitDetail } from "@/components/organigram/UnitDetail";
-import { DrillTreemap } from "@/components/organigram/layouts/DrillTreemap";
 import { Icicle } from "@/components/organigram/layouts/Icicle";
 import { SectionTreemap } from "@/components/organigram/layouts/SectionTreemap";
 import { Sunburst } from "@/components/organigram/layouts/Sunburst";
@@ -76,16 +75,13 @@ export default function Home() {
         <p className="text-muted-foreground">Loading organigram data…</p>
       ) : (
         <>
-          <Layout n={1} title="Drill-down treemap" hint="Parts as ordered columns (width ∝ posts); click a part → its sections → a section → its units. Few tiles per view keeps aspect ratios clean.">
-            <DrillTreemap units={units} onSelectUnit={setSelected} />
-          </Layout>
-          <Layout n={2} title="Part → Section treemap" hint="Sections grouped into ordered part columns; click a section to zoom to its units.">
+          <Layout n={1} title="Part → Section treemap" hint="Sections grouped into ordered part columns; click a section to zoom to its units.">
             <SectionTreemap units={units} onSelectUnit={setSelected} />
           </Layout>
-          <Layout n={3} title="Icicle — Part | Section | Unit" hint="Click a part to focus its sections, then a section to see its units at full size.">
+          <Layout n={2} title="Icicle — Part | Section | Unit" hint="Click a part to focus its sections, then a section to see its units at full size.">
             <Icicle units={units} onSelectUnit={setSelected} />
           </Layout>
-          <Layout n={4} title="Sunburst" hint="Rings: parts → sections → units, angle ∝ posts. Click a segment to zoom in; click the centre to zoom out.">
+          <Layout n={3} title="Sunburst" hint="Rings: parts → sections → units, angle ∝ posts. Click a segment to zoom in; click the centre to zoom out.">
             <div className="flex justify-center">
               <Sunburst units={units} onSelectUnit={setSelected} />
             </div>
